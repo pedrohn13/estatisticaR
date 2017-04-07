@@ -1,0 +1,144 @@
+---
+title: "Análise dos Gastos de Deputados Brasileiros"
+author: "Pedro Henriques Neto"
+date: "30 de março de 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr, warn.conflicts = F)
+library(readr)
+library(ggplot2)
+library(ggthemes)
+deputados_bruto = read_csv("gastos-cota_atividade_parlamentar.csv")
+
+deputados = deputados_bruto %>% select(-txtCNPJCPF, -vlrGlosa,-nuCarteiraParlamentar,
+                                       -nuDeputadoId,-codLegislatura,-numParcela,-txtPassageiro
+                                       -numEspecificacaoSubCota,-vlrRestituicao,-txtTrecho,
+                                       -txtPassageiro,-numSubCota,-txtDescricaoEspecificacao,
+                                       -txtNumero,-numEspecificacaoSubCota,-numLote,-indTipoDocumento,
+                                       -ideDocumento,-ideCadastro,-nuLegislatura,-numRessarcimento)
+
+
+
+deputados = deputados %>% select(nome = txNomeParlamentar,
+                                 estado = sgUF,
+                                 partido = sgPartido,
+                                 descricao = txtDescricao,
+                                 fornecedor = txtFornecedor,
+                                 valor = vlrDocumento,
+                                 valor_liquido = vlrLiquido,
+                                 mes = numMes,
+                                 ano = numAno,
+                                 data = datEmissao)
+```
+
+## Contexto
+
+A câmara federal brasileira de deputados disponibiliza através de seu site de transparência, inúmeros dados referentes aos parlamentares e entre eles, dados do uso da Cota para Exercício da Atividade Parlamentar desde o início de 2015.
+
+Esses dados podem ser baixados neste link: <http://www2.camara.leg.br/transparencia/cota-para-exercicio-da-atividade-parlamentar/dados-abertos-cota-parlamentar> e o entendimento deles pode ficar mais fácil ao conferir a explicação para cada coluna da tabela neste link:<http://www2.camara.leg.br/transparencia/cota-para-exercicio-da-atividade-parlamentar/explicacoes-sobre-o-formato-dos-arquivos-xml>
+
+## Análise
+
+Baseado nesses dados, foi feito um estudo estatístico para responder a duas questões:
+
+**a. Em que tipo de despesas os parlamentares gastam mais recursos de sua cota?**
+
+**b. Que tipos de despesa tem valores que mais variam quando comparamos os deputados?**
+
+Os dados foram analisados e verificado que para responder a essas questões, a maioria das variáveis que tem neles não seriam de utilidade, como por exemplo, o número identificador de uma nota fiscal.
+
+Então feita essa análise, foram escolhidas as seguintes variáveis para o estudo:
+Valor da despesa, Tipo da Despesa, Nome do Parlamentar e Unidade da Federação a qual ele pertence
+
+Dessas variáveis, a única quantitativa é a do Valor da Despesa. Dela podemos coletar algumas informações importantes, como média, mediana (valor que divide as observações no meio), máximo e mínimo.
+
+Utilizando o seguinte código, chegamos aos resultados
+```{r sumario}
+sumario = deputados %>% summarise(media = mean(valor),mediana = median(valor), min = min(valor),max = max(valor))
+```
+
+**Média de despesas: R$ 612.60**
+
+**Mediana de despesas: R$ 144.93**
+
+**Menor despesa observada: R$ -7172.75**
+
+**Maior despesa observada: R$ 189600.00**
+
+
+Vemos que os deputados brasileiros gastam em média 612.60 reais em suas despesas. O valor que divide as amostras em duas é  144.93 reais, a menor despesa observada foi negativa, -7172.75 reais, o que pode ter sido algo como um ressarcimento e a maior foi um gasto em uma única despesa de 189600.00 reais
+
+Curioso para saber quem é o deputado bonzinho que teve a despesa menor e quem é o gastador que teve a despesa maior, foi feita uma filtragem para se descobrir
+```{r bommal}
+bonzinho = deputados %>% filter(valor == min(valor))
+gastador = deputados %>% filter(valor == max(valor))
+```
+
+O deputado que teve a despesa menor foi FRANKLIN LIMA, PP-MG, que no dia 25/08/2015 teve uma despesa negativa (devolveu a União dinheiro) de -7172.75 reais com Emissão de Bilhete Aéreo com o fornecedor Cia Áerea - TAM.
+
+O deputado que teve a despesa maior foi ARNALDO FARIA DE SÁ, PTB-SP, que no dia 18/12/2015 teve uma despesa de 189600.00 reais com DIVULGAÇÃO DA ATIVIDADE PARLAMENTAR com o fornecedor GRÁFICA TRÊS PONTAS.
+
+## Resultados
+#### Em que tipo de despesas os parlamentares gastam mais recursos de sua cota?
+Para responder a primeira pergunta, foram agrupados os gastos por tipo de despesa e somados os valores da cada um tipo, dessa forma, obteve-se uma tabela com os Tipos de Despesa e o valor do total que foi gasto com aquele tipo.
+
+```{r deputados}
+gastos = deputados %>% select(nome,valor,descricao)
+gastos_somados = gastos %>%  group_by(descricao) %>% summarise(total = sum(valor)/1000)
+```
+
+```{r echo=FALSE}
+gastos_somados %>% 
+  ggplot(mapping = aes(x =descricao,y=total)) + geom_bar(stat = "identity") + 
+  labs(x ="Tipos de Despesa",
+       y="Valor Total (em milhares)",
+       title="Gastos totais por Despesa") + coord_flip()
+```
+
+Através do gráfico de barras, podemos ver claramente que a despesa na qual os parlamentares gastam mais recursos é **DIVULGAÇÃO DE ATIVIDADE PARLAMENTAR**
+
+#### Que tipos de despesa tem valores que mais variam quando comparamos os deputados?
+Finalmente, para saber o quanto variam as despesas em relação aos deputados, foi agrupado o gasto relativo a cada tipo de despesa por deputado, assim foi possivel analisar o quanto cada deputado gastou individualmente para cada tipo de despesa
+
+```{r deputados_individual}
+gastos_deputado_despesa = gastos %>% group_by(nome,descricao) %>%  summarise(total = sum(valor)/1000)
+```
+
+```{r echo=FALSE}
+gastos_deputado_despesa %>% 
+  ggplot(mapping = aes(x =descricao,y=total)) + 
+  geom_boxplot(width = .3)+
+  labs(x ="Tipos de Despesa",
+       y="Valor Total (em milhares)",
+       title="Gastos totais por Despesa") + coord_flip()
+```
+
+Analisar o grafico, vemos que o tipo de despesa que mais varia entre os deputados é também **DIVULGAÇÃO DE ATIVIDADE PARLAMENTAR**, mas como temos dados de todos os parlamentares de todos os estados, e o tamanho da cota varia entre os estados, vemos muitos casos de **outliers**, que nada mais são esses pontos que ficam soltos e que representam valores muito acima ou abaixo da maioria dos demais valores observados. Vamos analisar um estado em separado para ver como se comporta e minimizar esse problema. O estado escolhido foi o da Paraíba. Primeiramente temos que filtrar os deputados paraibanos.
+
+```{r paraibanos}
+paraibanos = deputados %>% filter(estado == "PB")
+```
+
+E então aplicar os mesmos agrupamentos
+
+```{r paraibanos_gastos}
+gastos_pb = paraibanos %>% select(nome,valor,descricao)
+gastos_deputado_despesa_pb = gastos_pb %>% group_by(nome,descricao) %>%  summarise(total = sum(valor)/1000)
+```
+
+```{r echo=FALSE}
+gastos_deputado_despesa_pb %>% 
+  ggplot(mapping = aes(x =descricao,y=total)) + 
+  geom_boxplot(width = .3)+
+  labs(x ="Tipos de Despesa",
+       y="Valor Total (em milhares)",
+       title="Gastos totais por Despesa - PB") + coord_flip()
+```
+
+Filtrando pelo estado da Paraíba, vemos que a quantidade de obervações de **outliers** diminuiu muito, porém ainda vemos que o tipo de despesa que mais varia entre os deputados é **DIVULGAÇÃO DE ATIVIDADE PARLAMENTAR**, o que mostra que alguns deputados gastam pouco da sua cota com esse tipo, enquanto outros gastam demais.
+
+## Conclusão
+Podemos então concluir que os politicos brasileiros estão muito preocupados em divulgar suas atividades e passar uma imagem para o cidadão que muitas vezes não condiz com a realidade, afinal, somos um dos países do mundo em que mais existe corrupção.

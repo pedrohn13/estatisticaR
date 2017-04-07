@@ -1,0 +1,157 @@
+---
+title: "Análise dos Gastos de Deputados Brasileiros II"
+author: "Pedro Henriques Neto"
+date: "6 de abril de 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr, warn.conflicts = F)
+library(readr)
+library(ggplot2)
+library(ggthemes)
+```
+
+## Contexto
+
+Este documento é uma continuação da análise feita anteriormente dos gastos de deputados federais do Brasil e publicada neste link: <http://rpubs.com/pedrohnt/deputadosfbr>
+
+Baseado nas observações feitas, foram levantadas duas novas questões e através deste essas questões serão respondidas.
+
+**Sabemos pela analise anterior que se gasta mais com Divulgação de Atividade Parlamentar. Existe alguma empresa que monopoliza a maioria das despesas desse tipo para os deputados da Paraíba ou eles variam bastante entre empresas diferentes?**
+
+**Deputados gastam muito com passagens aéreas, é o segundo tipo de despesa que eles mais usam a cota, mas será que eles compram para eles próprios essas passagens? Qual a variação da quantidade de pessoas diferentes para quem os deputados compram passagens aéreas?**
+
+## Análise
+
+Cada questão levantada será respondida através de análise dos dados. Vamos às análises.
+
+Antes de entrar nos detalhes para responder cada pergunta, será precisa fazer uma organização dos dados para deixar apenas os campos que serão usados na análise. Utilizando o código R abaixo:
+
+``` {r message=FALSE}
+deputados_bruto = read_csv("gastos-cota_atividade_parlamentar.csv")
+
+deputados = deputados_bruto %>% select(-txtCNPJCPF, -vlrGlosa,-nuCarteiraParlamentar,
+                                       -nuDeputadoId,-codLegislatura,-numParcela,-txtPassageiro
+                                       -numEspecificacaoSubCota,-vlrRestituicao,-txtTrecho,
+                                       -numSubCota,-txtDescricaoEspecificacao,
+                                       -txtNumero,-numEspecificacaoSubCota,-numLote,-indTipoDocumento,
+                                       -ideDocumento,-ideCadastro,-nuLegislatura,-numRessarcimento)
+
+
+
+deputados = deputados %>% select(nome = txNomeParlamentar,
+                                 estado = sgUF,
+                                 partido = sgPartido,
+                                 descricao = txtDescricao,
+                                 passageiro = txtPassageiro,
+                                 fornecedor = txtFornecedor,
+                                 valor = vlrDocumento,
+                                 valor_liquido = vlrLiquido,
+                                 mes = numMes,
+                                 ano = numAno,
+                                 data = datEmissao)
+```
+
+Primeiro foram carregados os dados da base disponibilizada pela câmara (vide o documento de análise citado anteriormente para entender melhor), removidas as colunas que não eram necessárias e renomeadas as colunas que restaram para um nome mais intuitivo.
+
+#### Sabemos pela analise anterior que se gasta mais com Divulgação de Atividade Parlamentar. Existe alguma empresa que monopoliza a maioria das despesas desse tipo para os deputados da Paraíba ou eles variam bastante entre empresas diferentes?
+
+Para chegar a esta resposta vamos inciar a manipulação dos dados
+
+Primeiro selecionar só as colunas que importam.
+``` {r}
+gastos = deputados %>% select(estado,nome,valor,descricao,fornecedor)
+```
+
+Filtrar os deputados da Paraíba e as despesas com Divulgação de Atividade Parlamentar
+``` {r}
+gastos_div_pb = gastos %>% filter(estado=="PB", descricao=="DIVULGAÇÃO DA ATIVIDADE PARLAMENTAR.")
+```
+
+``` {r include=FALSE}
+gastos_div_pb = gastos_div_pb %>% select(-descricao,-estado)
+```
+
+Agrupar os fornecedores de acordo com a quantidade de vezes que aparecem
+``` {r}
+empresas_pb = gastos_div_pb %>% group_by(fornecedor) %>% tally()
+```
+
+E por fim, ordenar decrescentemente pela ocorrencia
+``` {r}
+empresas_pb = empresas_pb %>% arrange(-n)
+```
+
+Agora os dados estão agrupados de forma onde temos os fornecedores com a quantidade de vezes que eles aparecem em ordem decrescente.
+
+``` {r}
+glimpse(empresas_pb)
+```
+
+Uma rápida olhada em como se comporta a variável de ocorrências da empresa:
+``` {r}
+glimpse(empresas_pb %>% summarise(media = mean(n), mediana = median(n), min = min(n), max = max(n)))
+```
+
+Vemos que empresas foram contratadas em média ~9.77 vezes, com uma mediana de 3.5, a(s) empresa(s) que menos foram contratadas, foram contratadas 1 vez, e teve uma empresa que foi contratada 185 vezes, algo bem acima das medidas de representação. Com uma análise gráfica poderemos ver se realmente tem algo estranho.
+
+Vamos ver como se comporta a variável
+``` {r}
+empresas_pb %>% ggplot(aes(x = n)) + geom_density()
+```
+
+Comportamento assimétrico, com muitas observações com baixo valor, com isso vemos que realmente a maioria das empresas são contratadas poucas vezes, mas existe uma que está sendo contratada muitas vezes.
+
+Que empresa é? Vamos verificar as TOP 30 empresas mais solicitadas:
+
+``` {r}
+head(empresas_pb,30) %>% ggplot(aes(x = reorder(fornecedor,n), y=n)) + 
+  geom_bar(stat = "identity") + xlab("Empresas") + ylab("Quantidade de vezes contratada") + coord_flip()
+```
+
+**JOSELY FERNANDA DO NASCIMENTO** é uma empresa que está sendo muito mais contratada do que as outras, mas será que ela está variando tanto assim mesmo? Vamos através de um gráfico de boxplot confirmar isso.
+
+``` {r}
+empresas_pb %>% 
+  ggplot(mapping = aes(x ="",y=n)) + 
+  geom_boxplot(width = .1) + xlab("") + ylab("Quantidade de vezes contratada")
+```
+
+Está confirmado, **JOSELY FERNANDA DO NASCIMENTO** é uma empresa que está sendo contratada numa anormal quantidade de vezes. O que responde a nossa pergunta. Não chega a ser um monopólio, mas ela detem uma quantidade de contratos absurdamente maior que as outras empresas.
+
+Numa pesquisa na web, encontramos mais informações sobre essa empresa no link: <http://olhoneles.org/detail-supplier/20126#!houses>
+
+A partir dessa resposta, podemos fazer uma nova pergunta:
+**Esta empresa está lucrando tanto quanto está sendo contratada, ou seriam os contratos de baixo valor e assim ela não se destaca quando a questão é valor recebido? Existe alguma empresa que está lucrando muito ou na questão de lucro elas estão niveladas?**
+
+Primeiro organizar os dados de forma que possam ser analisados. Agrupar por fornecedor e somar os valores de cada um
+``` {r}
+empresas_lucro_pb = gastos_div_pb %>% select(-nome) %>% group_by(fornecedor) %>% summarise(valor = sum(valor)/1000) %>% arrange(-valor)
+
+glimpse(empresas_lucro_pb)
+```
+
+Agora serão feitas as mesmas análises que foram feitas anteriormente
+
+``` {r}
+glimpse(empresas_lucro_pb %>% summarise(media = mean(valor), mediana = median(valor), min = min(valor), max = max(valor)))
+```
+
+``` {r}
+empresas_lucro_pb %>% ggplot(aes(x = valor)) + geom_density()
+```
+
+``` {r}
+head(empresas_lucro_pb,30) %>% ggplot(aes(x = reorder(fornecedor,valor), y=valor)) + 
+  geom_bar(stat = "identity") + xlab("Empresas") + ylab("Valor Recebido (Milhares de Reais)") + coord_flip()
+```
+
+``` {r}
+empresas_lucro_pb %>% 
+  ggplot(mapping = aes(x ="",y=valor)) + 
+  geom_boxplot(width = .1) + xlab("") + ylab("Valor Recebido (Milhares de Reais)")
+```
+
+Novamente vemos que **JOSELY FERNANDA DO NASCIMENTO** não só é uma empresa que é muito solicitada, além do normal, também lucra além do normal comparada a outras empresas de publicidade.
